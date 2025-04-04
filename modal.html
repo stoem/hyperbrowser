@@ -1,0 +1,80 @@
+<div class="modal-wrapper ModalWrapper ng-scope" style="z-index: 10001;">
+	<div class="Modal Modal--fixed"><!-- ngIf: $ctrl.step === 'selectMode' --><flow-booking-select-mode
+			ng-if="$ctrl.step === 'selectMode'" user="$ctrl.user" club="$ctrl.club" modes="$ctrl.modes"
+			booking="$ctrl.booking" can-manage-bookings="$ctrl.canManageBookings"
+			can-make-own-bookings="$ctrl.canMakeOwnBookings" on-next="$ctrl.nextFromMode()" on-close="$ctrl.close()"
+			class="ng-scope ng-isolate-scope">
+			<div class="Modal-header Modal-header--navigateable success">
+				<h1 class="ng-binding">New Padel booking</h1>
+				<div class="Modal-close" ng-click="$ctrl.onClose()"> <i class="Icon">close</i></div>
+			</div>
+			<div class="Modal-body">
+				<div class="Group">
+					<p> <strong class="ng-binding">Thursday 17 April</strong>, <strong class="ng-binding">08:00 –
+							09:00</strong>, <strong class="ng-binding">Padel Court 2 (Near)</strong><br><em
+							class="ng-binding">1 hour</em></p>
+				</div>
+				<div class="Group"> <label class="Label">Booking
+						type</label><!-- ngIf: $ctrl.modes.length <= 4 --><!-- ngIf: $ctrl.modes.length > 4 --><select-box
+						ng-if="$ctrl.modes.length > 4" ng-model="$ctrl.booking.mode" options="$ctrl.modes"
+						label-by="name" track-by="id" as-object="true" on-change="$ctrl.setMode(value)"
+						class="ng-not-empty">
+						<div class="SelectBox ng-untouched ng-valid ng-scope ng-isolate-scope ng-dirty">
+							<div class="InputWrapper is-clickable" ng-click="$ctrl.toggleOptions()">
+								<!-- ngIf: !$ctrl.hasSpinner -->
+								<div class="Caret ng-scope" ng-class="{disabled: $ctrl.isDisabled}"
+									ng-click="$event.stopPropagation(); $ctrl.toggleOptions();"
+									ng-if="!$ctrl.hasSpinner"></div><!-- end ngIf: !$ctrl.hasSpinner -->
+								<input readonly="" class="Input " type="text" ng-value="$ctrl.getSelectedLabel()"
+									ng-keydown="$ctrl.keydown($event)"
+									ng-class="{disabled: ($ctrl.isDisabled || $ctrl.hasSpinner)}"
+									value="Playing with other members only">
+								<!-- ngIf: $ctrl.hasSpinner -->
+							</div>
+							<!-- ngIf: $ctrl.isShowingOptions -->
+						</div>
+					</select-box><!-- end ngIf: $ctrl.modes.length > 4 --></div>
+				<!-- ngIf: $ctrl.booking.activity.allowRecurringBookings || $ctrl.canManageBookings -->
+			</div>
+			<div class="Modal-alerts"><!-- ngIf: $ctrl.booking.mode.description -->
+				<alert type="info" ng-if="$ctrl.booking.mode.description" class="ng-scope ng-isolate-scope">
+					<!-- ngIf: !$ctrl.isHidden -->
+					<div class="Alert Alert--info" ng-if="!$ctrl.isHidden">
+						<div class="AlertContents">
+							<div class="Alert-iconWrapper">
+								<i class="Icon Icon--l Alert-icon ng-binding">info</i>
+							</div>
+							<div class="Alert-message" ng-transclude="">
+								<p ng-bind-html="$ctrl.booking.mode.description | markdown:true"
+									class="ng-binding ng-scope">Playing with up to 3 other members, no visitors</p>
+							</div>
+						</div>
+						<!-- ngIf: $ctrl.canDismiss -->
+					</div><!-- end ngIf: !$ctrl.isHidden -->
+				</alert>
+				<!-- end ngIf: $ctrl.booking.mode.description --><!-- ngIf: $ctrl.error --><!-- ngIf: $ctrl.booking.isStartDatePast && !$ctrl.booking.isPast && (settings.booking.allowCurrent || $ctrl.booking.forOthers) --><!-- ngIf: $ctrl.booking.isPast && $ctrl.booking.forOthers --><!-- ngIf: $ctrl.booking.isStartDatePast && !$ctrl.booking.isPast && !$ctrl.booking.forOthers && !settings.booking.allowCurrent && $ctrl.canManageBookings --><!-- ngIf: $ctrl.booking.isPast && !$ctrl.booking.forOthers && $ctrl.canManageBookings --><!-- ngIf: $ctrl.booking.isStartDatePast && !$ctrl.booking.forOthers && !settings.booking.allowCurrent && !$ctrl.canManageBookings --><!-- ngIf: $ctrl.booking.isPast && !$ctrl.booking.forOthers && !$ctrl.canManageBookings -->
+			</div>
+			<div class="Modal-footer"><button-bar on-cancel="$ctrl.onClose()" on-confirm="$ctrl.next()"
+					has-spinner-confirm="true" is-disabled-confirm="$ctrl.isBusy" label-confirm="Next"
+					class="ng-isolate-scope">
+					<div class="ButtonBar">
+						<!-- ngIf: $ctrl.showBack --><!-- ngIf: $ctrl.transclude --><!-- ngIf: $ctrl.showCancel || $ctrl.showConfirm -->
+						<div class="ButtonGroup ButtonGroup--primary ng-scope"
+							ng-if="$ctrl.showCancel || $ctrl.showConfirm"> <!-- ngIf: $ctrl.showCancel --><button
+								class="Button ng-animate-disabled ng-binding ng-scope" ng-if="$ctrl.showCancel"
+								ng-click="$ctrl.cancel()" ng-disabled="$ctrl.isDisabledCancel">
+								Cancel</button><!-- end ngIf: $ctrl.showCancel -->
+							<!-- ngIf: $ctrl.showConfirm --><button class="Button Button--success ng-animate-disabled"
+								ng-if="$ctrl.showConfirm" ng-click="$ctrl.confirm()"
+								ng-disabled="$ctrl.isDisabledConfirm"> <!-- ngIf: $ctrl.iconConfirm -->
+								Next<!-- ngIf: $ctrl.hasSpinnerConfirm -->
+								<spinner ng-if="$ctrl.hasSpinnerConfirm" class="SpinnerComponent">
+									<div class="Spinner ng-scope ng-isolate-scope"></div>
+								</spinner><!-- end ngIf: $ctrl.hasSpinnerConfirm -->
+							</button><!-- end ngIf: $ctrl.showConfirm --></div>
+						<!-- end ngIf: $ctrl.showCancel || $ctrl.showConfirm -->
+					</div>
+				</button-bar></div>
+		</flow-booking-select-mode><!-- end ngIf: $ctrl.step === 'selectMode' --><!-- ngIf: $ctrl.step === 'selectMembers' --><!-- ngIf: $ctrl.step === 'notes' --><!-- ngIf: $ctrl.step === 'recurrence' --><!-- ngIf: $ctrl.step === 'confirmBooking' -->
+	</div>
+</div>
