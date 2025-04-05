@@ -70,14 +70,13 @@ export default defineComponent({
 
 			// Define time preferences based on day type
 			const weekdayTimes = ['12:00', '13:00', '14:00', '11:00', '15:00'];
-			const weekendTimes = ['16:00', '15:00', '17:00', '18:00', '19:00'];
+			const weekendTimes = ['16:00', '17:00', '15:00', '18:00', '19:00', '20:00'];
 			const priorityTimes = isWeekend ? weekendTimes : weekdayTimes;
 
 			log(`Booking for ${formattedDate} (${isWeekend ? 'weekend' : 'weekday'})`);
 			
 			// Navigate to Padel bookings
 			await page.goto(`https://harboroughcsc.helloclub.com/bookings/padel/${formattedDate}`);
-			//await page.goto(`https://harboroughcsc.helloclub.com/bookings/padel/2025-04-17`);
 
 			// Wait for slots to appear
 			log("Waiting for slots to appear...");
@@ -111,6 +110,8 @@ export default defineComponent({
 
 			// Find and click slot based on priority
 			const clickResult = await page.evaluate(async () => {
+				const priorityTimes = ['12:00', '13:00', '14:00', '11:00', '15:00', '16:00'];  // keeping original times
+				
 				for (const targetTime of priorityTimes) {
 					const slot = Array.from(document.querySelectorAll('.BookingGrid-cell.Slot'))
 						.find(slot => {
@@ -123,16 +124,18 @@ export default defineComponent({
 						console.log(`Found ${targetTime} slot:`, slot.className);
 						slot.click();
 						console.log('First click done, checking for modal...');
-
+						
+						// Wait to see if modal appears
 						await new Promise(resolve => setTimeout(resolve, 2500));
-
+						
+						// Check if modal appeared
 						const modalVisible = !!document.querySelector('button.Button.Button--success.ng-animate-disabled');
-
+						
 						if (!modalVisible) {
 							console.log('Modal not visible after first click, clicking again');
 							slot.click();
 						}
-
+						
 						return {
 							success: true,
 							timeBooked: targetTime,
@@ -141,7 +144,7 @@ export default defineComponent({
 						};
 					}
 				}
-
+				
 				return { success: false, timeBooked: null };
 			});
 
@@ -155,11 +158,15 @@ export default defineComponent({
 				log('No available slots found at preferred times');
 			}
 
+			// Wait longer if we needed a second click
 			await new Promise(resolve => setTimeout(resolve, clickResult.requiredSecondClick ? 3000 : 2000));
 
-			// Handle the booking flow
+			// Wait for the modal with more logging
 			log("Waiting for Next button in modal...");
-			await page.waitForSelector('button.Button.Button--success.ng-animate-disabled', { visible: true, timeout: 10000 });
+			await page.waitForSelector('button.Button.Button--success.ng-animate-disabled', { 
+				visible: true, 
+				timeout: 10000 
+			});
 
 			// Click through all buttons
 			for (const buttonText of ['Next', 'Next', 'Confirm booking']) {
