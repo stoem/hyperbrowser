@@ -65,6 +65,16 @@ export default defineComponent({
 			futureDate.setDate(today.getDate() + 14);
 			const formattedDate = futureDate.toISOString().split('T')[0];
 
+			// Determine if the date is a weekend (0 = Sunday, 6 = Saturday)
+			const isWeekend = futureDate.getDay() === 0 || futureDate.getDay() === 6;
+
+			// Define time preferences based on day type
+			const weekdayTimes = ['12:00', '13:00', '14:00', '11:00', '15:00'];
+			const weekendTimes = ['16:00', '15:00', '17:00', '18:00', '19:00'];
+			const priorityTimes = isWeekend ? weekendTimes : weekdayTimes;
+
+			log(`Booking for ${formattedDate} (${isWeekend ? 'weekend' : 'weekday'})`);
+			
 			// Navigate to Padel bookings
 			await page.goto(`https://harboroughcsc.helloclub.com/bookings/padel/${formattedDate}`);
 			//await page.goto(`https://harboroughcsc.helloclub.com/bookings/padel/2025-04-17`);
@@ -101,8 +111,6 @@ export default defineComponent({
 
 			// Find and click slot based on priority
 			const clickResult = await page.evaluate(async () => {
-				const priorityTimes = ['12:00', '13:00', '14:00', '11:00', '15:00', '16:00'];
-
 				for (const targetTime of priorityTimes) {
 					const slot = Array.from(document.querySelectorAll('.BookingGrid-cell.Slot'))
 						.find(slot => {
