@@ -7,9 +7,15 @@ export default defineComponent({
 		$_timeout: {
 			type: "integer",
 			default: 300000, // 5 minutes (increased from 4)
+		},
+		debug_mode: {
+			type: "boolean",
+			label: "Debug Mode",
+			description: "If enabled, will simulate the booking process without making actual bookings",
+			default: false,
 		}
 	},
-	async run({ steps, $ }) {
+	async run({ steps, $, props }) {
 		// Initialize logs array
 		let logs = [];
 		const log = (message) => {
@@ -18,6 +24,24 @@ export default defineComponent({
 			console.log(formattedMessage);
 			logs.push(formattedMessage);
 		};
+
+		// Log the entire event object to see what we're receiving
+		log(`Raw event: ${JSON.stringify({ steps, $, props })}`);
+
+		const config = {
+			debug_mode: Boolean(
+				props?.debug_mode || 
+				process.env.DEBUG_MODE === 'true' || 
+				false
+			)
+		};
+
+		log(`Environment DEBUG_MODE: ${process.env.DEBUG_MODE}`);
+		log(`Final debug_mode value: ${config.debug_mode}`);
+
+		if (config.debug_mode) {
+			log("🔍 Running in DEBUG MODE - No actual bookings will be made");
+		}
 
 		log("Starting session");
 		const client = new Hyperbrowser({
@@ -181,6 +205,28 @@ export default defineComponent({
 				visible: true,
 				timeout: 10000
 			});
+
+			if (config.debug_mode) {
+				log("DEBUG MODE: Would have clicked through booking confirmation here");
+				log("DEBUG MODE: Simulated booking for time: " + clickResult.timeBooked);
+				
+				// Clean up in debug mode
+				await browser.close();
+				browser = null;
+				await client.sessions.stop(session.id);
+				session = null;
+
+				const debugResult = {
+					message: "Debug mode: Booking simulation completed successfully",
+					logs: logs.join('\n'),
+					success: true,
+					debug: true,
+					timeBooked: clickResult.timeBooked,
+					date: formattedDate
+				};
+				$.export("bookingResult", debugResult);
+				return debugResult;
+			}
 
 			// Click through all buttons
 			for (const buttonText of ['Next', 'Next', 'Confirm booking']) {
