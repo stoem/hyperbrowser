@@ -96,6 +96,20 @@ export default defineComponent({
 			});
 			log('Debug Info:', debugInfo);
 
+			// Log detailed information about available slots
+			const availableSlotsInfo = await page.evaluate(() => {
+				const availableSlots = document.querySelectorAll('.BookingGrid-cell.Slot.available');
+				return Array.from(availableSlots).map(slot => ({
+					time: slot.querySelector('.Slot-text')?.textContent?.trim(),
+					className: slot.className,
+					isAvailable: slot.classList.contains('available')
+				}));
+			});
+			log(`Available slots (${availableSlotsInfo.length}):`);
+			availableSlotsInfo.forEach(slot => {
+				log(`- Time: ${slot.time}, Available: ${slot.isAvailable}, Classes: ${slot.className}`);
+			});
+
 			// Early exit if no available slots
 			if (debugInfo.availableSlots === 0) {
 				log("No available slots found for this day");
