@@ -45,8 +45,8 @@ const main = async () => {
 		});
 
 		if (emailInput) {
-			await page.type('form input[type="email"]', process.env.HELLO_CLUB_EMAIL, {delay: 0});
-			await page.type('form input[type="password"]', process.env.HELLO_CLUB_PASSWORD, {delay: 0});
+			await page.type('form input[type="email"]', process.env.HELLO_CLUB_EMAIL, {delay: 15});
+			await page.type('form input[type="password"]', process.env.HELLO_CLUB_PASSWORD, {delay: 15});
 			
 			await page.waitForSelector('button.firstActionButton');
 			await page.click('button.firstActionButton');
