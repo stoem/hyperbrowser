@@ -258,6 +258,28 @@ export default defineComponent({
 					throw new Error(`Failed to click ${buttonText} button: ${buttonClick.error}`);
 				}
 
+				// After clicking Next buttons, check for the "already booked" message
+				if (buttonText === 'Next') {
+					// Wait a moment for any error message to appear
+					await new Promise(resolve => setTimeout(resolve, 1000));
+					
+					const modalState = await page.evaluate(() => {
+						const modalContent = document.querySelector('.Modal-content');
+						return {
+							hasModal: !!modalContent,
+							modalText: modalContent?.textContent || '',
+							isAlreadyBooked: modalContent?.textContent?.includes('This court already has a booking or event at this time') || false
+						};
+					});
+
+					log(`Modal state after ${buttonText}: ${JSON.stringify(modalState)}`);
+
+					if (modalState.isAlreadyBooked) {
+						log('Detected slot is already booked');
+						throw new Error('SLOT_ALREADY_BOOKED');
+					}
+				}
+
 				// For the final "Confirm booking" button, we don't need to wait for the next button
 				if (buttonText === 'Confirm booking') {
 					// Short wait to ensure the click registers
