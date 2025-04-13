@@ -13,6 +13,13 @@ export default defineComponent({
 			label: "Debug Mode",
 			description: "If enabled, will simulate the booking process without making actual bookings",
 			default: false,
+		},
+		preferred_court: {
+			type: "string",
+			label: "Preferred Court",
+			description: "Preferred court number (1 or 2). Will try this court first if available.",
+			default: "1",
+			options: ["1", "2"]
 		}
 	},
 	async run({ steps, $, props }) {
@@ -33,11 +40,15 @@ export default defineComponent({
 				props?.debug_mode || 
 				process.env.DEBUG_MODE === 'true' || 
 				false
-			)
+			),
+			preferred_court: props?.preferred_court || 
+				process.env.PREFERRED_COURT || 
+				"1"  // Default to Court 1 if not specified
 		};
 
 		log(`Environment DEBUG_MODE: ${process.env.DEBUG_MODE}`);
 		log(`Final debug_mode value: ${config.debug_mode}`);
+		log(`Preferred court: ${config.preferred_court}`);
 
 		if (config.debug_mode) {
 			log("🔍 Running in DEBUG MODE - No actual bookings will be made");
@@ -147,53 +158,80 @@ export default defineComponent({
 			}
 
 			// Find and click slot based on priority
-			const clickResult = await page.evaluate(async () => {
-				const priorityTimes = ['12:00', '13:00', '14:00', '11:00', '15:00', '16:00'];  // keeping original times
+			const clickResult = await page.evaluate(async (config) => {
+				const { priorityTimes, preferred_court } = config;
+				// Helper function to get court number and name
+				const getCourtInfo = (slot) => {
+					const columnIndex = Array.from(slot.parentElement.children).indexOf(slot);
+					const courtHeader = document.querySelectorAll('.BookingGridArea-name')[columnIndex];
+					const courtName = courtHeader ? courtHeader.textContent.trim() : 'Unknown';
+					const courtNumber = courtName.includes('Court 1') ? "1" : "2";
+					return {
+						name: courtName,
+						number: courtNumber,
+						isPreferred: courtNumber === preferred_court
+					};
+				};
 
 				for (const targetTime of priorityTimes) {
-					const slot = Array.from(document.querySelectorAll('.BookingGrid-cell.Slot'))
-						.find(slot => {
+					// Get all available slots for this time
+					const availableSlots = Array.from(document.querySelectorAll('.BookingGrid-cell.Slot'))
+						.filter(slot => {
 							const timeText = slot.querySelector('.Slot-text')?.textContent?.trim();
 							const isAvailable = slot.classList.contains('available');
 							return timeText?.includes(targetTime) && isAvailable;
 						});
 
-					if (slot) {
-						console.log(`Found ${targetTime} slot:`, slot.className);
+					// If we have multiple slots for the same time, prefer configured court
+					if (availableSlots.length > 0) {
+						// Sort slots by court preference
+						const sortedSlots = availableSlots.sort((a, b) => {
+							const courtA = getCourtInfo(a);
+							const courtB = getCourtInfo(b);
+							return courtB.isPreferred - courtA.isPreferred; // Preferred court first
+						});
+
+						const slot = sortedSlots[0];  // Take the preferred court
+						const courtInfo = getCourtInfo(slot);
+						console.log(`Found ${targetTime} slot on ${courtInfo.name} (${courtInfo.isPreferred ? 'preferred' : 'alternative'} court):`, slot.className);
+						
 						slot.click();
 						console.log('First click done, checking for modal...');
-
+						
 						// Wait to see if modal appears
 						await new Promise(resolve => setTimeout(resolve, 2500));
-
+						
 						// Check if modal appeared
 						const modalVisible = !!document.querySelector('button.Button.Button--success.ng-animate-disabled');
-
+						
 						if (!modalVisible) {
 							console.log('Modal not visible after first click, clicking again');
 							slot.click();
 						}
-
+						
 						return {
 							success: true,
 							timeBooked: targetTime,
+							courtBooked: courtInfo.name,
+							wasPreferredCourt: courtInfo.isPreferred,
 							requiredSecondClick: !modalVisible,
 							className: slot.className
 						};
 					}
 				}
-
-				return { success: false, timeBooked: null };
-			});
+				
+				return { success: false, timeBooked: null, courtBooked: null, wasPreferredCourt: false };
+			}, { priorityTimes, preferred_court: config.preferred_court });
 
 			// Log outside of page.evaluate
 			if (clickResult.success) {
-				log(`Found and clicked ${clickResult.timeBooked} slot: ${clickResult.className}`);
+				log(`Found and clicked ${clickResult.timeBooked} slot on ${clickResult.courtBooked}${clickResult.wasPreferredCourt ? ' (preferred court)' : ' (alternative court)'}: ${clickResult.className}`);
 				if (clickResult.requiredSecondClick) {
 					log('Required second click due to no modal visible after first click');
 				}
 			} else {
 				log('No available slots found at preferred times');
+				throw new Error('No available slots found at preferred times');
 			}
 
 			// Wait longer if we needed a second click
