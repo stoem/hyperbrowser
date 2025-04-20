@@ -16,7 +16,7 @@ const main = async (props) => {
 	let browser;
 	let clickResult;
 	let formattedDate;
-	
+
 	// Configuration object using passed props
 	const appConfig = {
 		debug_mode: props.debug_mode ?? false,
@@ -65,7 +65,7 @@ const main = async (props) => {
 		// Navigate to the website
 		log("Navigating to Harborough CSC...");
 		await page.goto("https://harboroughcsc.helloclub.com");
-		
+
 		// Wait for the first form and email input to be present
 		await page.waitForSelector('form');
 		const emailInput = await page.evaluate(() => {
@@ -75,9 +75,9 @@ const main = async (props) => {
 		});
 
 		if (emailInput) {
-			await page.type('form input[type="email"]', process.env.HELLO_CLUB_EMAIL, {delay: 15});
-			await page.type('form input[type="password"]', process.env.HELLO_CLUB_PASSWORD, {delay: 15});
-			
+			await page.type('form input[type="email"]', process.env.HELLO_CLUB_EMAIL, { delay: 15 });
+			await page.type('form input[type="password"]', process.env.HELLO_CLUB_PASSWORD, { delay: 15 });
+
 			await page.waitForSelector('button.firstActionButton');
 			await page.click('button.firstActionButton');
 		} else {
@@ -86,7 +86,7 @@ const main = async (props) => {
 
 		// Wait for login to complete
 		await page.waitForNavigation();
-		
+
 		// Calculate date 14 days from now
 		const today = new Date();
 		const futureDate = new Date(today);
@@ -97,15 +97,15 @@ const main = async (props) => {
 		const isWeekend = futureDate.getDay() === 0 || futureDate.getDay() === 6;
 
 		// Define time preferences based on day type
-		const weekdayTimes = ['12:00', '13:00', '14:00', '11:00', '15:00'];
+		const weekdayTimes = ['12:00', '13:00', '14:00', '11:00', '15:00', '16:00'];
 		const weekendTimes = ['16:00', '17:00', '15:00', '18:00', '19:00', '20:00'];
 		const priorityTimes = isWeekend ? weekendTimes : weekdayTimes;
 
 		log(`Booking for ${formattedDate} (${isWeekend ? 'weekend' : 'weekday'})`);
-		
+
 		// Navigate to Padel bookings
 		await page.goto(`https://harboroughcsc.helloclub.com/bookings/padel/${formattedDate}`);
-		
+
 		// Wait for slots to appear
 		log("Waiting for slots to appear...");
 		await page.waitForSelector('.BookingGrid-cell.Slot', { visible: true, timeout: 30000 });
@@ -165,19 +165,19 @@ const main = async (props) => {
 					const slot = sortedSlots[0];
 					const courtInfo = getCourtInfo(slot);
 					console.log(`Found ${targetTime} slot on ${courtInfo.name} (${courtInfo.isPreferred ? 'preferred' : 'alternative'} court):`, slot.className);
-					
+
 					slot.click();
 					console.log('First click done, checking for modal...');
-					
+
 					await new Promise(resolve => setTimeout(resolve, 2500));
-					
+
 					const modalVisible = !!document.querySelector('button.Button.Button--success.ng-animate-disabled');
-					
+
 					if (!modalVisible) {
 						console.log('Modal not visible after first click, clicking again');
 						slot.click();
 					}
-					
+
 					return {
 						success: true,
 						timeBooked: targetTime,
@@ -188,7 +188,7 @@ const main = async (props) => {
 					};
 				}
 			}
-			
+
 			return { success: false, timeBooked: null, courtBooked: null, wasPreferredCourt: false };
 		}, { priorityTimes, preferred_court: appConfig.preferred_court });
 
@@ -205,9 +205,9 @@ const main = async (props) => {
 		await new Promise(resolve => setTimeout(resolve, clickResult.requiredSecondClick ? 3000 : 2000));
 
 		log("Waiting for Next button in modal...");
-		await page.waitForSelector('button.Button.Button--success.ng-animate-disabled', { 
-			visible: true, 
-			timeout: 10000 
+		await page.waitForSelector('button.Button.Button--success.ng-animate-disabled', {
+			visible: true,
+			timeout: 10000
 		});
 
 		for (const buttonText of ['Next', 'Next', 'Confirm booking']) {
@@ -237,7 +237,7 @@ const main = async (props) => {
 
 			if (buttonText === 'Next') {
 				await new Promise(resolve => setTimeout(resolve, 1000));
-				
+
 				const modalState = await page.evaluate(() => {
 					const modalContent = document.querySelector('.Modal-content');
 					return {
@@ -280,7 +280,7 @@ const main = async (props) => {
 
 	} catch (error) {
 		log(`Encountered an error: ${error}`);
-		
+
 		if (browser) {
 			await browser.close();
 		}
