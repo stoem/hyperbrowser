@@ -132,151 +132,201 @@ const main = async (props) => {
 		}
 
 		// Try to find and click slot based on priority
-		clickResult = await page.evaluate(async (config) => {
-			const { priorityTimes, preferred_court } = config;
-			// Helper function to get court number and name
-			const getCourtInfo = (slot) => {
-				const columnIndex = Array.from(slot.parentElement.children).indexOf(slot);
-				const courtHeader = document.querySelectorAll('.BookingGridArea-name')[columnIndex];
-				const courtName = courtHeader ? courtHeader.textContent.trim() : 'Unknown';
-				const courtNumber = courtName.includes('Court 1') ? "1" : "2";
-				return {
-					name: courtName,
-					number: courtNumber,
-					isPreferred: courtNumber === preferred_court
-				};
-			};
-
-			for (const targetTime of priorityTimes) {
-				const availableSlots = Array.from(document.querySelectorAll('.BookingGrid-cell.Slot'))
-					.filter(slot => {
-						const timeText = slot.querySelector('.Slot-text')?.textContent?.trim();
-						const isAvailable = slot.classList.contains('available');
-						return timeText?.includes(targetTime) && isAvailable;
-					});
-
-				if (availableSlots.length > 0) {
-					const sortedSlots = availableSlots.sort((a, b) => {
-						const courtA = getCourtInfo(a);
-						const courtB = getCourtInfo(b);
-						return courtB.isPreferred - courtA.isPreferred;
-					});
-
-					const slot = sortedSlots[0];
-					const courtInfo = getCourtInfo(slot);
-					console.log(`Found ${targetTime} slot on ${courtInfo.name} (${courtInfo.isPreferred ? 'preferred' : 'alternative'} court):`, slot.className);
-
-					slot.click();
-					console.log('First click done, checking for modal...');
-
-					await new Promise(resolve => setTimeout(resolve, 2500));
-
-					const modalVisible = !!document.querySelector('button.Button.Button--success.ng-animate-disabled');
-
-					if (!modalVisible) {
-						console.log('Modal not visible after first click, clicking again');
-						slot.click();
-					}
-
+		let bookingAttempts = 0;
+		const MAX_BOOKING_ATTEMPTS = 3;  // Maximum number of booking attempts
+		
+		while (bookingAttempts < MAX_BOOKING_ATTEMPTS) {
+			bookingAttempts++;
+			log(`Booking attempt ${bookingAttempts} of ${MAX_BOOKING_ATTEMPTS}`);
+			
+			clickResult = await page.evaluate(async (config) => {
+				const { priorityTimes, preferred_court } = config;
+				// Helper function to get court number and name
+				const getCourtInfo = (slot) => {
+					const columnIndex = Array.from(slot.parentElement.children).indexOf(slot);
+					const courtHeader = document.querySelectorAll('.BookingGridArea-name')[columnIndex];
+					const courtName = courtHeader ? courtHeader.textContent.trim() : 'Unknown';
+					const courtNumber = courtName.includes('Court 1') ? "1" : "2";
 					return {
-						success: true,
-						timeBooked: targetTime,
-						courtBooked: courtInfo.name,
-						wasPreferredCourt: courtInfo.isPreferred,
-						requiredSecondClick: !modalVisible,
-						className: slot.className
+						name: courtName,
+						number: courtNumber,
+						isPreferred: courtNumber === preferred_court
 					};
+				};
+
+				// Get all available slots that haven't been attempted yet
+				const getAvailableSlots = () => {
+					const slots = Array.from(document.querySelectorAll('.BookingGrid-cell.Slot'))
+						.filter(slot => {
+							const timeText = slot.querySelector('.Slot-text')?.textContent?.trim();
+							const isAvailable = slot.classList.contains('available');
+							// Add data attribute to track attempted slots
+							if (!slot.hasAttribute('data-booking-attempted')) {
+								slot.setAttribute('data-booking-attempted', 'false');
+							}
+							return timeText && isAvailable && slot.getAttribute('data-booking-attempted') === 'false';
+						});
+					return slots;
+				};
+
+				for (const targetTime of priorityTimes) {
+					const availableSlots = getAvailableSlots()
+						.filter(slot => {
+							const timeText = slot.querySelector('.Slot-text')?.textContent?.trim();
+							return timeText?.includes(targetTime);
+						});
+
+					if (availableSlots.length > 0) {
+						const sortedSlots = availableSlots.sort((a, b) => {
+							const courtA = getCourtInfo(a);
+							const courtB = getCourtInfo(b);
+							return courtB.isPreferred - courtA.isPreferred;
+						});
+
+						const slot = sortedSlots[0];
+						// Mark this slot as attempted
+						slot.setAttribute('data-booking-attempted', 'true');
+						const courtInfo = getCourtInfo(slot);
+						console.log(`Found ${targetTime} slot on ${courtInfo.name} (${courtInfo.isPreferred ? 'preferred' : 'alternative'} court):`, slot.className);
+
+						slot.click();
+						console.log('First click done, checking for modal...');
+
+						await new Promise(resolve => setTimeout(resolve, 2500));
+
+						const modalVisible = !!document.querySelector('button.Button.Button--success.ng-animate-disabled');
+
+						if (!modalVisible) {
+							console.log('Modal not visible after first click, clicking again');
+							slot.click();
+						}
+
+						return {
+							success: true,
+							timeBooked: targetTime,
+							courtBooked: courtInfo.name,
+							wasPreferredCourt: courtInfo.isPreferred,
+							requiredSecondClick: !modalVisible,
+							className: slot.className
+						};
+					}
 				}
+
+				return { success: false, timeBooked: null, courtBooked: null, wasPreferredCourt: false };
+			}, { priorityTimes, preferred_court: appConfig.preferred_court });
+
+			if (!clickResult.success) {
+				log('No more available slots found at preferred times');
+				throw new Error('No more available slots found at preferred times');
 			}
 
-			return { success: false, timeBooked: null, courtBooked: null, wasPreferredCourt: false };
-		}, { priorityTimes, preferred_court: appConfig.preferred_court });
-
-		if (clickResult.success) {
 			log(`Found and clicked ${clickResult.timeBooked} slot on ${clickResult.courtBooked}${clickResult.wasPreferredCourt ? ' (preferred court)' : ' (alternative court)'}: ${clickResult.className}`);
 			if (clickResult.requiredSecondClick) {
 				log('Required second click due to no modal visible after first click');
 			}
-		} else {
-			log('No available slots found at preferred times');
-			throw new Error('No available slots found at preferred times');
+
+			await new Promise(resolve => setTimeout(resolve, clickResult.requiredSecondClick ? 3000 : 2000));
+
+			log("Waiting for Next button in modal...");
+			await page.waitForSelector('button.Button.Button--success.ng-animate-disabled', {
+				visible: true,
+				timeout: 10000
+			});
+
+			let isSlotAlreadyBooked = false;
+
+			for (const buttonText of ['Next', 'Next', 'Confirm booking']) {
+				const buttonClick = await page.evaluate((text) => {
+					const button = document.querySelector('button.Button.Button--success.ng-animate-disabled');
+					if (button && button.textContent.trim().includes(text)) {
+						console.log(`Found ${text} button:`, button.className);
+						button.click();
+						return {
+							success: true,
+							className: button.className
+						};
+					}
+					return {
+						success: false,
+						error: `${text} button not found or not clickable`,
+						buttonFound: !!button
+					};
+				}, buttonText);
+
+				if (buttonClick.success) {
+					log(`Clicked ${buttonText} button: ${buttonClick.className}`);
+				} else {
+					log(`Failed to click ${buttonText} button: ${buttonClick.error}`);
+					throw new Error(`Failed to click ${buttonText} button: ${buttonClick.error}`);
+				}
+
+				if (buttonText === 'Next') {
+					await new Promise(resolve => setTimeout(resolve, 1000));
+
+					const modalState = await page.evaluate(() => {
+						const modalContent = document.querySelector('.Modal-content');
+						return {
+							hasModal: !!modalContent,
+							modalText: modalContent?.textContent || '',
+							isAlreadyBooked: modalContent?.textContent?.includes('This court already has a booking or event at this time') || false
+						};
+					});
+
+					log(`Modal state after ${buttonText}: ${JSON.stringify(modalState)}`);
+
+					if (modalState.isAlreadyBooked) {
+						log('Detected slot is already booked, will try to cancel and retry with another slot');
+						isSlotAlreadyBooked = true;
+						
+						// Click the Cancel button
+						await page.evaluate(() => {
+							const cancelButton = Array.from(document.querySelectorAll('button')).find(
+								button => button.textContent.trim().toLowerCase() === 'cancel'
+							);
+							if (cancelButton) {
+								cancelButton.click();
+							}
+						});
+						
+						// Wait for the modal to close
+						await new Promise(resolve => setTimeout(resolve, 2000));
+						break;
+					}
+				}
+
+				if (buttonText === 'Confirm booking') {
+					await new Promise(resolve => setTimeout(resolve, 1000));
+					break;
+				}
+
+				await new Promise(resolve => setTimeout(resolve, 2000));
+				await page.waitForSelector('button.Button.Button--success.ng-animate-disabled', { visible: true, timeout: 10000 });
+			}
+
+			// If the slot was already booked, continue to the next attempt
+			if (isSlotAlreadyBooked) {
+				log(`Booking attempt ${bookingAttempts} failed due to slot being already booked, trying next available slot...`);
+				continue;
+			}
+
+			// If we reach here, booking was successful
+			log("Booking confirmed, cleaning up...");
+			await browser.close();
+			browser = null;
+			await client.sessions.stop(session.id);
+			session = null;
+
+			log("Booking completed successfully");
+			return {
+				success: true,
+				timeBooked: clickResult.timeBooked,
+				date: formattedDate,
+				logs: logs
+			};
 		}
 
-		await new Promise(resolve => setTimeout(resolve, clickResult.requiredSecondClick ? 3000 : 2000));
-
-		log("Waiting for Next button in modal...");
-		await page.waitForSelector('button.Button.Button--success.ng-animate-disabled', {
-			visible: true,
-			timeout: 10000
-		});
-
-		for (const buttonText of ['Next', 'Next', 'Confirm booking']) {
-			const buttonClick = await page.evaluate((text) => {
-				const button = document.querySelector('button.Button.Button--success.ng-animate-disabled');
-				if (button && button.textContent.trim().includes(text)) {
-					console.log(`Found ${text} button:`, button.className);
-					button.click();
-					return {
-						success: true,
-						className: button.className
-					};
-				}
-				return {
-					success: false,
-					error: `${text} button not found or not clickable`,
-					buttonFound: !!button
-				};
-			}, buttonText);
-
-			if (buttonClick.success) {
-				log(`Clicked ${buttonText} button: ${buttonClick.className}`);
-			} else {
-				log(`Failed to click ${buttonText} button: ${buttonClick.error}`);
-				throw new Error(`Failed to click ${buttonText} button: ${buttonClick.error}`);
-			}
-
-			if (buttonText === 'Next') {
-				await new Promise(resolve => setTimeout(resolve, 1000));
-
-				const modalState = await page.evaluate(() => {
-					const modalContent = document.querySelector('.Modal-content');
-					return {
-						hasModal: !!modalContent,
-						modalText: modalContent?.textContent || '',
-						isAlreadyBooked: modalContent?.textContent?.includes('This court already has a booking or event at this time') || false
-					};
-				});
-
-				log(`Modal state after ${buttonText}: ${JSON.stringify(modalState)}`);
-
-				if (modalState.isAlreadyBooked) {
-					log('Detected slot is already booked');
-					throw new Error('SLOT_ALREADY_BOOKED');
-				}
-			}
-
-			if (buttonText === 'Confirm booking') {
-				await new Promise(resolve => setTimeout(resolve, 1000));
-				break;
-			}
-
-			await new Promise(resolve => setTimeout(resolve, 2000));
-			await page.waitForSelector('button.Button.Button--success.ng-animate-disabled', { visible: true, timeout: 10000 });
-		}
-
-		log("Booking confirmed, cleaning up...");
-		await browser.close();
-		browser = null;
-		await client.sessions.stop(session.id);
-		session = null;
-
-		log("Booking completed successfully");
-		return {
-			success: true,
-			timeBooked: clickResult.timeBooked,
-			date: formattedDate,
-			logs: logs
-		};
+		// If we've exhausted all attempts
+		throw new Error(`Failed to book after ${MAX_BOOKING_ATTEMPTS} attempts - all attempted slots were already booked`);
 
 	} catch (error) {
 		log(`Encountered an error: ${error}`);
