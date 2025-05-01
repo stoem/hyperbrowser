@@ -10,31 +10,55 @@ const log = (message) => {
 	logs.push(formattedMessage);
 };
 
-const parseEmailSubject = (subject) => {
-	// Expected format: "Padel court available for Saturday 26 April at 19:00"
-	const regex = /Padel court available for (\w+) (\d+) (\w+) at (\d{2}:\d{2})/;
-	const match = subject.match(regex);
-	
-	if (!match) {
-		throw new Error("Could not parse email subject. Expected format: 'Padel court available for Saturday 26 April at 19:00'");
+const parseEmailSubject = (subject, $) => {
+	log(`Attempting to parse email subject: "${subject}"`);
+
+	// First check if this is even a court release email
+	if (!subject.toLowerCase().includes('padel court available')) {
+		log("Not a Padel court release email - skipping");
+		$.flow.exit("Not a Padel court release email - skipping");
+		return null; // This line won't execute due to $.flow.exit, but good practice
 	}
-	
+
+	// Expected format: "Padel court available for Saturday 26 April at 19:00"
+	// But be more flexible with the pattern
+	const regex = /court available for (\w+) (\d+)\w* (\w+) at (\d{1,2}:\d{2})/i;
+	const match = subject.match(regex);
+
+	if (!match) {
+		log("Failed to parse subject with regex. Subject format not recognized.");
+		log("Expected format example: 'Padel court available for Saturday 26 April at 19:00'");
+		$.flow.exit("Could not parse email subject format");
+		return null;
+	}
+
 	const [_, day, dateNum, month, time] = match;
-	
+	log(`Parsed components: day=${day}, date=${dateNum}, month=${month}, time=${time}`);
+
 	// Convert to proper date object
 	const year = new Date().getFullYear();
 	const dateStr = `${dateNum} ${month} ${year}`;
 	const targetDate = new Date(dateStr);
-	
+
+	// Validate the date is valid
+	if (isNaN(targetDate.getTime())) {
+		log(`Invalid date created from: ${dateStr}`);
+		$.flow.exit("Invalid date in email subject");
+		return null;
+	}
+
 	// Format date for URL
 	const formattedDate = targetDate.toISOString().split('T')[0];
-	
-	return {
+
+	const result = {
 		day,
 		date: formattedDate,
 		time,
 		originalDate: `${dateNum} ${month}`,
 	};
+
+	log(`Successfully parsed booking details: ${JSON.stringify(result)}`);
+	return result;
 };
 
 const waitForElement = async (page, selector, options = {}) => {
@@ -44,7 +68,7 @@ const waitForElement = async (page, selector, options = {}) => {
 		polling: 100
 	};
 	const mergedOptions = { ...defaultOptions, ...options };
-	
+
 	try {
 		await page.waitForSelector(selector, mergedOptions);
 		return true;
@@ -57,7 +81,7 @@ const waitForElement = async (page, selector, options = {}) => {
 const waitForModalUpdate = async (page, expectedState = {}) => {
 	const maxAttempts = 20; // Increased from 10
 	const interval = 500; // Increased from 200
-	
+
 	for (let i = 0; i < maxAttempts; i++) {
 		const modalState = await page.evaluate(() => {
 			const modalContent = document.querySelector('.Modal-content');
@@ -69,25 +93,25 @@ const waitForModalUpdate = async (page, expectedState = {}) => {
 				hasNextButton: !!nextButton
 			};
 		});
-		
+
 		// If we're looking for a modal and found one, or looking for no modal and found none
 		if (expectedState.hasModal !== undefined && modalState.hasModal === expectedState.hasModal) {
 			return modalState;
 		}
-		
+
 		// If we're checking for already booked status
 		if (expectedState.isAlreadyBooked !== undefined && modalState.isAlreadyBooked === expectedState.isAlreadyBooked) {
 			return modalState;
 		}
-		
+
 		// If we found a next button when we're looking for a modal
 		if (expectedState.hasModal === true && modalState.hasNextButton) {
 			return modalState;
 		}
-		
+
 		await new Promise(resolve => setTimeout(resolve, interval));
 	}
-	
+
 	// Instead of throwing, return the current state
 	const finalState = await page.evaluate(() => {
 		const modalContent = document.querySelector('.Modal-content');
@@ -99,7 +123,7 @@ const waitForModalUpdate = async (page, expectedState = {}) => {
 			hasNextButton: !!nextButton
 		};
 	});
-	
+
 	return finalState;
 };
 
@@ -135,14 +159,14 @@ async function handleLoginIfNeeded(page, useProfile) {
 	await page.waitForNavigation();
 }
 
-const main = async (props) => {
+const main = async (props, $) => {
 	log("Starting session");
 	let session;
 	let browser;
 	let clickResult;
-	
+
 	// Parse the email subject
-	const bookingDetails = parseEmailSubject(props.subject);
+	const bookingDetails = parseEmailSubject(props.subject, $);
 	log(`Parsed booking details: ${JSON.stringify(bookingDetails)}`);
 
 	// Configuration object using passed props
@@ -213,9 +237,9 @@ const main = async (props) => {
 			});
 
 			if (!targetSlot) {
-				return { 
-					success: false, 
-					error: `No available slot found for ${targetTime}` 
+				return {
+					success: false,
+					error: `No available slot found for ${targetTime}`
 				};
 			}
 
@@ -224,7 +248,7 @@ const main = async (props) => {
 			await new Promise(resolve => setTimeout(resolve, 2500));
 
 			const modalVisible = !!document.querySelector('button.Button.Button--success.ng-animate-disabled');
-			
+
 			if (!modalVisible) {
 				targetSlot.click();
 			}
@@ -245,7 +269,42 @@ const main = async (props) => {
 			log('Required second click due to no modal visible after first click');
 		}
 
-		// Rest of the booking logic...
+		// Wait for booking modal to appear
+		log("Waiting for booking modal...");
+		const modalState = await waitForModalUpdate(page, { hasModal: true });
+
+		if (modalState.isAlreadyBooked) {
+			throw new Error("Court is already booked for this time slot");
+		}
+
+		// Click the "Next" button
+		log("Clicking Next button...");
+		await page.click('button.Button.Button--success.ng-animate-disabled');
+
+		// Wait for confirmation modal
+		log("Waiting for confirmation modal...");
+		await waitForElement(page, '.Modal-content', { timeout: 10000 });
+
+		// Click the final confirm button
+		log("Confirming booking...");
+		await page.click('button.Button.Button--success');
+
+		// Wait for success message or redirect
+		await page.waitForNavigation({ waitUntil: 'networkidle0' });
+
+		log("Booking completed successfully");
+
+		// Cleanup
+		await browser.close();
+		await client.sessions.stop(session.id);
+
+		return {
+			success: true,
+			timeBooked: clickResult.timeBooked,
+			date: appConfig.targetDate,
+			logs: logs
+		};
+
 	} catch (error) {
 		log(`Encountered an error: ${error}`);
 
@@ -287,11 +346,17 @@ export default {
 		}
 	},
 	async run({ steps, $ }) {
+		const subject = steps.trigger.event.parsedHeaders.subject;
+		if (!subject) {
+			$.flow.exit("No email subject found in trigger event");
+			return;
+		}
+
 		// Pass the props to main function
 		return await main({
 			debug_mode: this.debug_mode,
 			profile_id: this.profile_id,
-			subject: steps.trigger.event.parsedHeaders.subject
-		});
+			subject
+		}, $);
 	},
 };
