@@ -185,8 +185,8 @@ const main = async (props) => {
 		const isWeekend = futureDate.getDay() === 0 || futureDate.getDay() === 6;
 
 		// Define time preferences based on day type
-		const weekdayTimes = ['12:00', '13:00', '14:00', '11:00', '15:00', '16:00'];
-		const weekendTimes = ['16:00', '17:00', '15:00', '18:00', '19:00', '20:00'];
+		const weekdayTimes = ['12:00', '13:00', '14:00', '11:00', '15:00', '16:00', '19:00', '17:00', '20:00'];
+		const weekendTimes = ['16:00', '17:00', '15:00', '14:00', '18:00', '19:00', '20:00'];
 		const priorityTimes = isWeekend ? weekendTimes : weekdayTimes;
 
 		log(`Booking for ${formattedDate} (${isWeekend ? 'weekend' : 'weekday'})`);
