@@ -84,12 +84,21 @@ const waitForModalUpdate = async (page, expectedState = {}) => {
 
 	for (let i = 0; i < maxAttempts; i++) {
 		const modalState = await page.evaluate(() => {
-			const modalContent = document.querySelector('.Modal-content');
+			const modal = document.querySelector('.Modal-content') || document.querySelector('.Modal');
 			const nextButton = document.querySelector('button.Button.Button--success.ng-animate-disabled');
+			let modalText = '';
+			if (modal) {
+				modalText = modal.innerText || modal.textContent || '';
+			}
+			// Also extract alert messages
+			const alertMessage = document.querySelector('.Modal-alerts .Alert-message');
+			if (alertMessage && alertMessage.innerText) {
+				modalText += ' ' + alertMessage.innerText;
+			}
 			return {
-				hasModal: !!modalContent || !!nextButton,
-				modalText: modalContent?.textContent || '',
-				isAlreadyBooked: modalContent?.textContent?.includes('This court already has a booking or event at this time') || false,
+				hasModal: !!modal || !!nextButton,
+				modalText: modalText.trim(),
+				isAlreadyBooked: modalText.includes('already has a booking or event at this time'),
 				hasNextButton: !!nextButton
 			};
 		});
@@ -285,8 +294,16 @@ const main = async (props, $) => {
 			throw new Error("Court is already booked for this time slot");
 		}
 
+		// Check for booking limit message
+		if (modalState.modalText && modalState.modalText.includes('You are on the limit')) {
+			log('Booking limit reached: ' + modalState.modalText);
+			throw new Error('Booking limit reached: ' + modalState.modalText);
+		}
+
 		// Use the more robust button handling approach for all three steps
-		for (const buttonText of ['Next', 'Next', 'Confirm booking']) {
+		const buttonSequence = ['Next', 'Next', 'Confirm booking'];
+		for (let i = 0; i < buttonSequence.length; i++) {
+			const buttonText = buttonSequence[i];
 			const buttonSelector = 'button.Button.Button--success.ng-animate-disabled';
 
 			// Wait for button to be available
@@ -323,8 +340,8 @@ const main = async (props, $) => {
 				throw new Error(`Failed to click ${buttonText} button: ${buttonClick.error}`);
 			}
 
-			if (buttonText === 'Next') {
-				// Wait for modal update with smart polling
+			// Wait for modal update and check for booking limit after each click
+			if (buttonText === 'Next' || buttonText === 'Confirm booking') {
 				const modalState = await waitForModalUpdate(page, { hasModal: true });
 				log(`Modal state after ${buttonText}: ${JSON.stringify(modalState)}`);
 
@@ -332,21 +349,42 @@ const main = async (props, $) => {
 					throw new Error("Court is already booked for this time slot");
 				}
 
+				// Check for booking limit message (case-insensitive, partial match)
+				if (modalState.modalText && /on the limit|limit of|booking limit/i.test(modalState.modalText)) {
+					log('Booking limit reached: ' + modalState.modalText);
+					throw new Error('Booking limit reached: ' + modalState.modalText);
+				}
+
+				// Special: After the second 'Next' click, wait for alert message to appear
+				if (buttonText === 'Next' && i === 1) {
+					// Wait up to 3 seconds for the alert message to appear
+					const alertText = await page.evaluate(async () => {
+						function waitForAlert() {
+							return new Promise(resolve => {
+								let attempts = 0;
+								function check() {
+									const alert = document.querySelector('.Modal-alerts .Alert-message');
+									if (alert && alert.innerText.trim().length > 0) {
+										resolve(alert.innerText.trim());
+									} else if (attempts++ < 30) {
+										setTimeout(check, 100);
+									} else {
+										resolve('');
+									}
+								}
+								check();
+							});
+						}
+						return await waitForAlert();
+					});
+					if (alertText && /on the limit|limit of|booking limit/i.test(alertText)) {
+						log('Booking limit detected after second Next: ' + alertText);
+						throw new Error('Booking limit reached: ' + alertText);
+					}
+				}
+
 				// Add a small delay to ensure UI updates are complete
 				await new Promise(resolve => setTimeout(resolve, 2000));
-			}
-
-			if (buttonText === 'Confirm booking') {
-				// Wait for success indication - either URL change or success message
-				log("Waiting for booking completion...");
-				await Promise.race([
-					page.waitForNavigation({ timeout: 30000 }),
-					page.waitForFunction(() => {
-						return window.location.href.includes('/bookings/') ||
-							document.body.textContent.includes('Booking confirmed') ||
-							document.body.textContent.includes('Booking successful');
-					}, { timeout: 30000 })
-				]);
 			}
 		}
 
