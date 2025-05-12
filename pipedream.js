@@ -115,6 +115,10 @@ const main = async (props) => {
 	let clickResult;
 	let formattedDate;
 
+	// Define the padel bookings base URL
+	const BOOKINGS_URL = 'https://harboroughcsc.helloclub.com/bookings/padel/';
+	//const BOOKINGS_URL = 'https://harboroughcsc.helloclub.com/bookings/cricket-nets/';
+
 	// Configuration object using passed props
 	const appConfig = {
 		debug_mode: props.debug_mode ?? false,
@@ -192,13 +196,27 @@ const main = async (props) => {
 		log(`Booking for ${formattedDate} (${isWeekend ? 'weekend' : 'weekday'})`);
 
 		// Navigate to Padel bookings
-		await page.goto(`https://harboroughcsc.helloclub.com/bookings/padel/${formattedDate}`);
+		await page.goto(`${BOOKINGS_URL}${formattedDate}`);
+		const currentUrl = await page.url();
+		log('Navigated to: ' + currentUrl);
+		if (!currentUrl.includes(BOOKINGS_URL)) {
+			log('ERROR: Not on the expected padel bookings page. Current URL: ' + currentUrl);
+			throw new Error('Navigation failed: Not on the expected padel bookings page.');
+		}
 		//await page.goto(`https://harboroughcsc.helloclub.com/bookings/cricket-nets/${formattedDate}`);
 
 		// Wait for slots to appear
 		log("Waiting for slots to appear...");
 		await page.waitForSelector('.BookingGrid-cell.Slot', { visible: true, timeout: 30000 });
 		await new Promise(resolve => setTimeout(resolve, 3000));
+
+		// Check again that we are still on the correct padel bookings page
+		const currentUrlAfterSlots = await page.url();
+		log('URL after slots loaded: ' + currentUrlAfterSlots);
+		if (!currentUrlAfterSlots.includes(BOOKINGS_URL)) {
+			log('ERROR: Not on the expected padel bookings page after slots loaded. Current URL: ' + currentUrlAfterSlots);
+			throw new Error('Navigation failed: Not on the expected padel bookings page after slots loaded.');
+		}
 
 		// Log detailed information about available slots
 		const availableSlotsInfo = await page.evaluate(() => {
