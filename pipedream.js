@@ -10,6 +10,12 @@ const log = (message) => {
 	logs.push(formattedMessage);
 };
 
+// Dynamically select credentials based on USER_SUFFIX
+const suffix = process.env.USER_SUFFIX || "";
+const EMAIL = process.env[`HELLO_CLUB_EMAIL${suffix}`];
+const PASSWORD = process.env[`HELLO_CLUB_PASSWORD${suffix}`];
+const API_KEY = process.env[`HYPERBROWSER_API_KEY${suffix}`];
+
 const waitForElement = async (page, selector, options = {}) => {
 	const defaultOptions = {
 		visible: true,
@@ -95,8 +101,8 @@ async function handleLoginIfNeeded(page, useProfile) {
 	});
 
 	if (emailInput) {
-		await page.type('form input[type="email"]', process.env.HELLO_CLUB_EMAIL, { delay: 15 });
-		await page.type('form input[type="password"]', process.env.HELLO_CLUB_PASSWORD, { delay: 15 });
+		await page.type('form input[type="email"]', EMAIL, { delay: 15 });
+		await page.type('form input[type="password"]', PASSWORD, { delay: 15 });
 
 		await page.waitForSelector('button.firstActionButton');
 		await page.click('button.firstActionButton');
@@ -114,6 +120,12 @@ const main = async (props) => {
 	let browser;
 	let clickResult;
 	let formattedDate;
+
+	// Use user_suffix from props, fallback to empty string
+	const suffix = props.user_suffix || "";
+	const EMAIL = process.env[`HELLO_CLUB_EMAIL${suffix}`];
+	const PASSWORD = process.env[`HELLO_CLUB_PASSWORD${suffix}`];
+	const API_KEY = process.env[`HYPERBROWSER_API_KEY${suffix}`];
 
 	// Define the padel bookings base URL
 	const BOOKINGS_URL = 'https://harboroughcsc.helloclub.com/bookings/padel/';
@@ -140,7 +152,7 @@ const main = async (props) => {
 	}
 
 	const client = new Hyperbrowser({
-		apiKey: process.env.HYPERBROWSER_API_KEY,
+		apiKey: API_KEY,
 	});
 
 	try {
@@ -411,6 +423,15 @@ const main = async (props) => {
 							continue;
 						}
 					} catch (modalError) {
+						// SPA session refresh detection: if slot grid is visible and modal is not, treat as session refresh and retry
+						const isSlotGridVisible = await page.evaluate(() => !!document.querySelector('.BookingGrid-cell.Slot'));
+						const isModalVisible = await page.evaluate(() => !!document.querySelector('.Modal-content'));
+						if (isSlotGridVisible && !isModalVisible) {
+							log('Detected unexpected return to slot grid (possible session refresh). Retrying booking attempt...');
+							// Short delay to allow UI to settle
+							await new Promise(resolve => setTimeout(resolve, 1000));
+							continue;
+						}
 						// If we encounter a modal error but can still see the next button, continue
 						const nextButtonVisible = await page.evaluate(() => {
 							return !!document.querySelector('button.Button.Button--success.ng-animate-disabled');
@@ -526,7 +547,14 @@ export default {
 			description: "Browser profile ID for session persistence. Leave empty to start fresh session.",
 			optional: true,
 			default: "",
-		}
+		},
+		user_suffix: {
+			type: "string",
+			label: "User Suffix",
+			description: "Suffix for user credentials (e.g., _JOANNA or leave blank for default)",
+			optional: true,
+			default: "",
+		},
 	},
 	async run({ steps, $ }) {
 		// Pass the props to main function
@@ -534,7 +562,8 @@ export default {
 			debug_mode: this.debug_mode,
 			preferred_court: this.preferred_court,
 			use_delay: this.use_delay,
-			profile_id: this.profile_id
+			profile_id: this.profile_id,
+			user_suffix: this.user_suffix,
 		});
 	},
 };
